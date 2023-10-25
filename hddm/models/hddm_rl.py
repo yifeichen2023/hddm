@@ -19,6 +19,7 @@ class HDDMrl(HDDM):
         self.non_centered = kwargs.pop("non_centered", False)
         self.dual = kwargs.pop("dual", False)
         self.alpha = kwargs.pop("alpha", True)
+        self.wm = kwargs.pop('wm', False) # YC added 10-24-23
         self.wfpt_rl_class = WienerRL
 
         super(HDDMrl, self).__init__(*args, **kwargs)
@@ -43,6 +44,29 @@ class HDDMrl(HDDM):
                 knodes.update(
                     self._create_family_normal_non_centered(
                         "pos_alpha",
+                        value=0,
+                        g_mu=0.2,
+                        g_tau=3**-2,
+                        std_lower=1e-10,
+                        std_upper=10,
+                        std_value=0.1,
+                    )
+                )
+            if self.wm: # YC added 10-240-23
+                knodes.update(
+                    self._create_family_normal_non_centered(
+                        "wm_w",
+                        value=0,
+                        g_mu=0.2,
+                        g_tau=3**-2,
+                        std_lower=1e-10,
+                        std_upper=10,
+                        std_value=0.1,
+                    )
+                )
+                knodes.update(
+                    self._create_family_normal_non_centered(
+                        "gamma",
                         value=0,
                         g_mu=0.2,
                         g_tau=3**-2,
@@ -76,6 +100,29 @@ class HDDMrl(HDDM):
                         std_value=0.1,
                     )
                 )
+            if self.wm: # YC added 10-24-23
+                knodes.update(
+                    self._create_family_normal(
+                        "wm_w",
+                        value=0,
+                        g_mu=0.2,
+                        g_tau=3**-2,
+                        std_lower=1e-10,
+                        std_upper=10,
+                        std_value=0.1,
+                    )
+                )
+                knodes.update(
+                    self._create_family_normal(
+                        "gamma",
+                        value=0,
+                        g_mu=0.2,
+                        g_tau=3**-2,
+                        std_lower=1e-10,
+                        std_upper=10,
+                        std_value=0.1,
+                    )
+                )
 
         return knodes
 
@@ -83,6 +130,10 @@ class HDDMrl(HDDM):
         wfpt_parents = super(HDDMrl, self)._create_wfpt_parents_dict(knodes)
         wfpt_parents["alpha"] = knodes["alpha_bottom"]
         wfpt_parents["pos_alpha"] = knodes["pos_alpha_bottom"] if self.dual else 100.00
+
+        # working memory componenets, YC added 10-24-23
+        wfpt_parents['gamma'] = knodes['gamma_bottom'] if self.wm else 100.00   # decay parameter after each trial on all qs
+        wfpt_parents['wm_w'] = knodes['wm_w_bottom'] if self.wm else 100.00   # wm weight, final_q = wm_w*wm_q + (1-wm_w)*rl_q
         return wfpt_parents
 
     def _create_wfpt_knode(self, knodes):
@@ -96,7 +147,7 @@ class HDDMrl(HDDM):
         )
 
 
-def wienerRL_like(x, v, alpha, pos_alpha, sv, a, z, sz, t, st, p_outlier=0):
+def wienerRL_like(x, v, alpha, pos_alpha, wm_w, gamma, sv, a, z, sz, t, st, p_outlier=0):
     wiener_params = {
         "err": 1e-4,
         "n_st": 2,
@@ -125,6 +176,8 @@ def wienerRL_like(x, v, alpha, pos_alpha, sv, a, z, sz, t, st, p_outlier=0):
         sz,
         t,
         st,
+        wm_w,
+        gamma,
         p_outlier=p_outlier,
         **wp
     )

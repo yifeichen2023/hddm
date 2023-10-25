@@ -81,7 +81,7 @@ def wiener_like_rlddm(np.ndarray[double, ndim=1] x,
                       np.ndarray[long, ndim=1] split_by,
                       double q, double alpha, double pos_alpha, double v, 
                       double sv, double a, double z, double sz, double t,
-                      double st, double err, int n_st=10, int n_sz=10, bint use_adaptive=1, double simps_err=1e-8,
+                      double st, double wm_w, double gamma, double err, int n_st=10, int n_sz=10, bint use_adaptive=1, double simps_err=1e-8,
                       double p_outlier=0, double w_outlier=0):
     cdef Py_ssize_t size = x.shape[0]
     cdef Py_ssize_t i, j
@@ -97,6 +97,13 @@ def wiener_like_rlddm(np.ndarray[double, ndim=1] x,
     cdef np.ndarray[double, ndim=1] feedbacks
     cdef np.ndarray[long, ndim=1] responses
     cdef np.ndarray[long, ndim=1] unique = np.unique(split_by)
+
+    # WM componenets, added by YC 10-24-23
+    cdef np.ndarray[double, ndim=1] wm_qs = np.array([q, q])    # wm qs with perfect learning but forget after each trial
+    cdef double gamma_
+    cdef double wm_w_
+    cdef np.ndarray[double, ndim=1] rl_qs = np.array([q, q])
+    cdef np.ndarray[double, ndim=1] init_qs = np.array([q, q])
 
     if not p_outlier_in_range(p_outlier):
         return -np.inf
@@ -114,19 +121,30 @@ def wiener_like_rlddm(np.ndarray[double, ndim=1] x,
         responses = response[split_by == s]
         xs = x[split_by == s]
         s_size = xs.shape[0]
-        qs[0] = q
-        qs[1] = q
+        rl_qs[0] = q
+        rl_qs[1] = q
 
         # don't calculate pdf for first trial but still update q
-        if feedbacks[0] > qs[responses[0]]:
+        if feedbacks[0] > rl_qs[responses[0]]:
             alfa = (2.718281828459**pos_alfa) / (1 + 2.718281828459**pos_alfa)
         else:
             alfa = (2.718281828459**alpha) / (1 + 2.718281828459**alpha)
 
         # qs[1] is upper bound, qs[0] is lower bound. feedbacks is reward
         # received on current trial.
-        qs[responses[0]] = qs[responses[0]] + \
+        rl_qs[responses[0]] = rl_qs[responses[0]] + \
             alfa * (feedbacks[0] - qs[responses[0]])
+
+        # WM, YC added 10-24-23
+        if gamma != 100.00:
+            gamma_ = (2.718281828459**gamma) / (1 + 2.718281828459**gamma)
+        if wm_w != 100.00:
+            wm_w_ = (2.718281828459**wm_w) / (1 + 2.718281828459**wm_w)
+            wm_qs[responses[0]] = wm_qs[responses[0]] + (feedbacks[0] - wm_qs[responses[0]])
+        else: 
+            wm_w_ = 0
+
+        qs = wm_w_*wm_qs + (1-wm_w_)*rl_qs
 
         # loop through all trials in current condition
         for i in range(1, s_size):
@@ -148,8 +166,15 @@ def wiener_like_rlddm(np.ndarray[double, ndim=1] x,
 
             # qs[1] is upper bound, qs[0] is lower bound. feedbacks is reward
             # received on current trial.
-            qs[responses[i]] = qs[responses[i]] + \
-                alfa * (feedbacks[i] - qs[responses[i]])
+            rl_qs[responses[i]] = rl_qs[responses[i]] + \
+                alfa * (feedbacks[i] - rl_qs[responses[i]])
+
+            # wm, YC added 10-24-23
+            if wm_w_!=0:
+                wm_qs[responses[i]] = wm_qs[responses[i]] + (feedbacks[i] - wm_qs[responses[i]])
+                wm_qs = wm_qs + gamma_*(init_qs-wm_qs)   # forgetting toward baseline (init_q)
+
+            qs = wm_w_*wm_qs + (1-wm_w_)*rl_qs
     return sum_logp
 
 
