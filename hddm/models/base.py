@@ -1353,6 +1353,8 @@ class HDDMBase(AccumulatorModel):
                 "sv",
                 "p_outlier",
                 "alpha",
+                "wm_w", # YC added for WM, 10-25-23
+                "gamma",
             )
 
         assert self.include.issubset(
